@@ -1,0 +1,67 @@
+# D&D Combat Helper - Especificação 
+
+## Visão geral
+PWA mobile para **um único jogador** acompanhar o próprio personagem em combates de D&D 5e (regras do PHB 2014). Foco: cálculos rápidos de HP, CA, saves e efeitos ativos. Não é ferramenta de mestre e não gerencia iniciativa.
+
+**Stack:** React + PWA (vite-plugin-pwa/Workbox), Dexie.js (IndexedDB), Zustand, command pattern para undo/redo.
+
+## Telas
+
+**Jornada** (principal): seleção do personagem ativo, undo/redo, iniciar/nomear/encerrar encontro, card de HP (Temp, Wild Shape, Normal), campo numérico com ações **Dano / Cura / HP temp**, lista de efeitos ativos, Short Rest, Long Rest, uso de Hit Dice e botão **Ficha** (abre a ficha rápida).
+
+**Ficha rápida** (painel sobre a Jornada): nível, bônus de proficiência, atributos efetivos (destaque para os da forma ativa), saves, 18 perícias com marcador de proficiência e talentos. Somente leitura.
+
+**Personagem**: biblioteca e edição. Atributos estáticos e dinâmicos, atributos (STR–CHA), proficiências, inventário e talentos. Criação de item em tela própria.
+
+**Biblioteca de Efeitos**: catálogo compartilhado entre personagens. Categorias: Condição (predefinida, sem duração), Spell (duração em turnos, opção de concentração), Transformação/Wild Shape (com stat block).
+
+**Encounter Journal**: encontros encerrados, cada um salvo como Battle Log.
+
+## Modelo de dados
+
+| Entidade | Campos principais |
+|---|---|
+| PERSONAGEM | nome, nivel, ca_normal, hp_max, hp_atual, hp_temp, hit_dice_max/atual, spell_save_dc, concentracao_save, wild_shape_cargas_max/atual, ouro, atributos (STR–CHA, valor bruto), saves_proficientes |
+| PERICIA_PERSONAGEM | pericia, atributo_base (editável), proficiencia (nenhuma/proficiente/expertise), bonus_extra |
+| ITEM | nome, tipo (mágico/outro), tooltip, **possui_cargas**, cargas_max, cargas_atual, recarga (nenhuma/short/long) |
+| TALENTO | nome, descricao (texto livre) |
+| EFEITO | nome, categoria, descricao, duracao_turnos (só Spell), concentracao, possui_stat_block |
+| STAT_BLOCK | STR–CHA, ca_propria, hp_max_propria, informacao_livre (texto) |
+| PERSONAGEM_EFEITO | aplicado_em, turnos_restantes, hp_atual_pool, ativo |
+| ENCONTRO / LOG_EVENTO | nome, início/fim; tipo, descrição, valor, timestamp |
+
+As 18 perícias vêm pré-cadastradas com o atributo padrão do livro. O componente de atributos e a função de modificador são compartilhados entre PERSONAGEM e STAT_BLOCK.
+
+## Regras de negócio
+
+**Dano** (fila de pools com overflow): Temp HP → HP da Wild Shape ativa → HP normal. Se o HP da forma zera, a forma termina e o excedente segue para o HP normal.
+
+**Pool principal:** o número grande do card de HP mostra a primeira pool ativa depois do Temp HP: a forma ativa (com HP e CA próprios) ou, sem forma, o HP normal do personagem (com `ca_normal`). O HP normal aparece como linha secundária só enquanto há forma ativa. O card se reorganiza sozinho quando a forma começa ou termina.
+
+**Recursos de transformação opcionais:** cargas de Wild Shape, categoria Transformação e o filtro "Formas" só aparecem para personagens com `wild_shape_cargas_max > 0`. Personagens sem esse recurso veem apenas HP, Temp HP e efeitos.
+
+**HP temporário:** nunca acumula; mantém o maior valor entre o atual e o novo. Se o valor novo for menor, o app avisa que o atual foi mantido.
+
+**Atributo efetivo (PHB 2014):** com Wild Shape ativa, apenas STR, DEX e CON vêm da forma. INT, WIS e CHA, proficiências em perícias e saves permanecem os do personagem.
+
+**CA ativa:** `ca_propria` da forma se houver Wild Shape ativa; senão `ca_normal`. Calculada em runtime.
+
+**Bônus de proficiência:** derivado do nível (+2 níveis 1–4, +3 em 5–8, +4 em 9–12, +5 em 13–16, +6 em 17–20).
+
+**Bônus de perícia/save:** modificador efetivo + proficiência (× 1 ou 2 na expertise) + bônus extra.
+
+**Concentração:** ao receber dano com Spell de concentração ativa, o app pede o teste: DC = maior entre 10 e metade do dano, mostrando o bônus efetivo de Con (ex.: "d20 + 3 contra DC 10"). Talentos não alteram o cálculo automaticamente.
+
+**Duração:** Spells têm contador de turnos; Condições são removidas manualmente.
+
+**Descansos:**
+- Short rest: recupera cargas de Wild Shape e itens com recarga short.
+- Long rest: recupera HP máximo, Hit Dice, cargas de Wild Shape e itens com recarga long.
+- Cada recarga vira evento no log e pode ser desfeita.
+
+**Itens sem cargas** (`possui_cargas = false`) aparecem só com nome e tooltip.
+
+**Talentos** são apenas consulta: sem estado, sem eventos no log e fora do undo/redo.
+
+## Fora de escopo da V1
+Múltiplos combatentes e iniciativa, ataques estruturados (ficam como texto livre), talentos com efeito automático ou uso limitado, sincronização em nuvem.
